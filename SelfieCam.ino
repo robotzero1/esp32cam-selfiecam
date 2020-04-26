@@ -28,6 +28,7 @@ char strftime_buf[64];
 int file_number = 0;
 
 
+
 // CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
@@ -123,12 +124,13 @@ void latestFileSPIFFS()
 
 void setup() {
   Serial.begin(115200);
-
+  // initialize io0 as an output for LED flash.
+  pinMode(0, OUTPUT);
   init_wifi();
 
   tft.begin();
 
-  tft.setRotation(0);  // 0 & 2 Portrait. 1 & 3 landscape
+  tft.setRotation(3);  // 0 & 2 Portrait. 1 & 3 landscape
   tft.fillScreen(TFT_BLACK);
 
   camera_config_t config;
@@ -190,7 +192,7 @@ void setup() {
       AsyncWebParameter* p = request->getParam("id");
       Serial.printf("GET[%s]: %s\n", p->name().c_str(), p->value().c_str());
       String imagefile = p->value();
-      imagefile = imagefile.substring(4); // remove _img
+      imagefile = imagefile.substring(4); // remove img_
       request->send(SPIFFS, "/" + imagefile);
     }
   });
@@ -249,65 +251,76 @@ bool face_detected()
 
 void smile_for_the_camera()
 {
+  digitalWrite(0, HIGH); // flash on
+
   long timer_millis = millis();
-  //while (millis() - timer_millis < 3000) {
+  while (millis() - timer_millis < 500) {
+    if (!face_detected()) { // if face disappears stop
+      Serial.println("face not detected");
+      digitalWrite(0, LOW);
+      return;
+    }
+  }
 
-  //  if (millis() - timer_millis < 1000) {
   fex.drawJpgFile(SPIFFS, "/_count3.jpg", 0, 0);
-  delay(400); //smooth display of numbers
-  //  }
-  //  if (millis() - timer_millis > 1000 && millis() - timer_millis <= 2000) {
+  delay(400);
   fex.drawJpgFile(SPIFFS, "/_count2.jpg", 0, 0);
-  delay(400); //smooth display of numbers
-  //  }
-  //  else if (millis() - timer_millis > 2000) {
+  delay(400);
   fex.drawJpgFile(SPIFFS, "/_count1.jpg", 0, 0);
-  delay(400); //smooth display of numbers
-  //  }
+  delay(400);
 
-  //if (!face_detected()) { // if face disappears stop
-  //  Serial.println("face not detected");
-  //  return;
-  //}
-  //}
-  take_photo(); //face still in frame (detected) for 2 seconds
+  take_photo();
 }
 
 static esp_err_t take_photo()
 {
+  latestFileSPIFFS(); // next file number
+  file_number++;
+  Serial.println(file_number);  
+  Serial.println("Starting thumb capture: ");
+  fb = esp_camera_fb_get();
+  fex.drawJpg((const uint8_t*)fb->buf, fb->len, 0, 0);
+  //save thumb
+  char *thumb_filename = (char*)malloc(23 + sizeof(file_number));
+  sprintf(thumb_filename, "/spiffs/selfie_t_%d.jpg", file_number);
+  Serial.println("Opening file: ");
+  FILE *thumbnail = fopen(thumb_filename, "w");
+  if (thumbnail != NULL)  {
+    size_t err = fwrite(fb->buf, 1, fb->len, thumbnail);
+    Serial.printf("File saved: %s\n", thumb_filename);
+  }  else  {
+    Serial.println("Could not open file");
+  }
+  fclose(thumbnail);
+  esp_camera_fb_return(fb);
+  fb = NULL;
+  free(thumb_filename);
+
+  Serial.println("Starting main capture: ");
   sensor_t * s = esp_camera_sensor_get();
   s->set_framesize(s, FRAMESIZE_SVGA);
   delay(500);
   fb = esp_camera_fb_get();
-  fex.drawJpg((const uint8_t*)fb->buf, fb->len, 0, 0);
-  latestFileSPIFFS();
-  file_number++;
-  Serial.print("Taking picture: ");
-  //Serial.print(file_number);
-
-  char *filename = (char*)malloc(21 + sizeof(file_number));
-  sprintf(filename, "/spiffs/selfie_%d.jpg", file_number);
+  char *full_filename = (char*)malloc(23 + sizeof(file_number));
+  sprintf(full_filename, "/spiffs/selfie_f_%d.jpg", file_number);
   Serial.println("Opening file: ");
-  FILE *file = fopen(filename, "w");
-  if (file != NULL)  {
-    size_t err = fwrite(fb->buf, 1, fb->len, file);
-    Serial.printf("File saved: %s\n", filename);
+  FILE *fullres = fopen(full_filename, "w");
+  if (fullres != NULL)  {
+    size_t err = fwrite(fb->buf, 1, fb->len, fullres);
+    Serial.printf("File saved: %s\n", full_filename);
   }  else  {
     Serial.println("Could not open file");
   }
-  fclose(file);
-  Serial.println("return  : ");
+  fclose(fullres);
   esp_camera_fb_return(fb);
-  Serial.println("NULL  : ");
   fb = NULL;
-  Serial.println("free  : ");
-  free(filename);
-  Serial.println("set_framesize  : ");
+  free(full_filename);
+
   s->set_framesize(s, FRAMESIZE_QQVGA);
   delay(500);
-  char *addtofilename = (char*)malloc(22 + sizeof(file_number));
-  sprintf(addtofilename, "added:selfie_%d.jpg", file_number);
-  ws.textAll((char*)addtofilename);// file added. request browser update
+  char *addtobrowser = (char*)malloc(24 + sizeof(file_number));
+  sprintf(addtobrowser, "added:selfie_t_%d.jpg", file_number);
+  ws.textAll((char*)addtobrowser);// file added. request browser update
 }
 
 
