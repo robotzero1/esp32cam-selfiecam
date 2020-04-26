@@ -50,14 +50,15 @@ document.addEventListener("DOMContentLoaded", function(event) {
 		
       } else if (message.data.substr(0, 6) == "added:") {  // file added to SPIFFS
 	  	addSelfieToScreen(message.data.substr(6)); 
-		populateImgtags(); // TODO just add the new one not all again
+		populateImgtag("img_"+message.data.substr(6)); // just add the new one not all again
 		
       } else {
 		  var filelistFromESP32 = message.data; // list of files from ESP32 like /img1.jpg/img2.jpg/img3.jpg
 		  var fileIDs = filelistFromESP32.substring(1).split("/"); // remove first / and then split on subsequent /
 		 // var fileIDs = filelistFromESP32.split("/");
 		  fileIDs.forEach(function(item){
-		    if (item.substr(0, 1) != "_"){ // ignore files starting with underscore
+		    //if (item.substr(0, 1) != "_"){ // ignore files starting with underscore
+			if (item.includes("_t_")){ // thumnail images
   				addSelfieToScreen(item);
 			}
 		  });
@@ -65,18 +66,22 @@ document.addEventListener("DOMContentLoaded", function(event) {
       }
     }
     if (message.data instanceof Blob) {
-	  console.log(imageItem.src);
-      var urlObject = URL.createObjectURL(message.data);
-      imageItem.src = urlObject;
+    //  var urlObject = URL.createObjectURL(message.data);
+    //  imageItem.src = urlObject;
     }
   };
   
   function addSelfieToScreen(selfieID) {
     const selfieList = document.querySelector("body");
     let listItem = document.createElement("div");
+	let ahrefItem = document.createElement("a");	
 	let imageItem = document.createElement("img");
     let deleteItem = document.createElement("span");
 	
+
+	var downloadId = selfieID.replace("_t_", "_f_"); //download file is named xxxx_f_123.jpg
+	ahrefItem.setAttribute('href', "/image/?id=img_"+downloadId);
+	ahrefItem.setAttribute("download", downloadId);
 	
 	imageItem.classList.add("image");
     imageItem.id = "img_"+selfieID;
@@ -88,11 +93,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
       ws.send("delete:" + selfieID);
     });
 	
-    listItem.appendChild(imageItem);
+	ahrefItem.appendChild(imageItem); // <a><img></a>
 	
-    listItem.appendChild(deleteItem).textContent = "X";
+    listItem.appendChild(ahrefItem); // <div><a><img></a></div>
+	
+    listItem.appendChild(deleteItem).textContent = "X"; // <div><a><img></a><span></span></div>
 		
-    selfieList.appendChild(listItem);
+    selfieList.appendChild(listItem); // <body>...</body>
   }
   
   function removeSelfieFromScreen(imageid){
@@ -100,7 +107,26 @@ document.addEventListener("DOMContentLoaded", function(event) {
 	imageItem.parentElement.remove(); // remove parent div and contents
   }
   
-  function populateImgtags(){
+  function populateImgtag(newImageId){ // Single Image
+ 			var imageItem = document.getElementById(newImageId);
+			console.log(imageItem);
+			const myHeaders = new Headers();
+	
+			const myRequest = new Request('/image/?id='+newImageId, {
+		  	method: 'GET',
+		  	headers: myHeaders,
+		  	mode: 'cors',
+		  	cache: 'default',
+			  });
+			
+			fetch(myRequest)
+		  	.then((response) => response.blob())
+		  	.then((myBlob) => {
+				imageItem.src = URL.createObjectURL(myBlob);
+		  	});
+  }  
+  
+  function populateImgtags(){ // All images
     var imageIDs = Array.from(document.getElementsByClassName("image"));
   	imageIDs.forEach(function(item){
             var imageItem = [];   
@@ -125,6 +151,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   }
 
 });
+
 </script>
 </body>
 </html>
