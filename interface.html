@@ -32,8 +32,7 @@ div {
 	right: 10px;	 
 }
 </style>
-</head>
-<body>
+	
 <script>
 document.addEventListener("DOMContentLoaded", function(event) {
   var baseHost = document.location.origin;
@@ -53,6 +52,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
 		populateImgtag("img_"+message.data.substr(6)); // just add the new one not all again
 		
       } else {
+	      const parent = document.body;
+              while (parent.firstChild) {
+                  parent.firstChild.remove(); // clean the page
+              }
 		  var filelistFromESP32 = message.data; // list of files from ESP32 like /img1.jpg/img2.jpg/img3.jpg
 		  var fileIDs = filelistFromESP32.substring(1).split("/"); // remove first / and then split on subsequent /
 		 // var fileIDs = filelistFromESP32.split("/");
@@ -152,6 +155,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
 });
 
-</script>
+</script>	
+	
+</head>
+<body>
+
 </body>
 </html>
