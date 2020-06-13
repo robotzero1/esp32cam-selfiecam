@@ -4,7 +4,6 @@
 #include "Arduino.h"
 #include "fd_forward.h"
 
-
 #include <SPI.h>
 #include <TFT_eSPI.h>
 TFT_eSPI tft = TFT_eSPI();
@@ -25,9 +24,7 @@ long last_capture_millis = 0;
 static esp_err_t cam_err;
 static esp_err_t card_err;
 char strftime_buf[64];
-int file_number = 0;
-
-
+long file_number = 0;
 
 // CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM     32
@@ -67,71 +64,22 @@ static inline mtmn_config_t app_mtmn_config()
 }
 mtmn_config_t mtmn_config = app_mtmn_config();
 
-void onEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
-{
-  // String incoming = String((char *)data); No idea why.. gave extra characters in data for short names.
-  // so ....
-  for (size_t i = 0; i < len; i++) {
-    incoming += (char)(data[i]);
-  }
-  Serial.println(incoming);
-
-  if (incoming.substring(0, 7) == "delete:") {
-    String deletefile = incoming.substring(7);
-    incoming = "";
-    Serial.println(deletefile);
-    Serial.println("image delete");
-    if (SPIFFS.remove("/" + deletefile)) {
-      client->text("removed:" + deletefile); // file deleted. request browser update
-    }
-  } else {
-    Serial.print("sending list");
-    client->text(filelist_spiffs());
-  }
-}
-
-String filelist_spiffs()
-{
-  fs::File root = SPIFFS.open("/");
-
-  fs::File file = root.openNextFile();
-  while (file) {
-    String fileName = file.name();
-    // Serial.println(fileName);
-    filelist = filelist + fileName;
-    file = root.openNextFile();
-  }
-  Serial.println(filelist);
-  return filelist;
-}
-
-void latestFileSPIFFS()
-{
-  fs::File root = SPIFFS.open("/");
-
-  fs::File file = root.openNextFile();
-  while (file) {
-    String fileName = file.name();
-    Serial.println(fileName);
-    int fromUnderscore = fileName.lastIndexOf('_') + 1;
-    int untilDot = fileName.lastIndexOf('.');
-    String fileId = fileName.substring(fromUnderscore, untilDot);
-    Serial.print(fileId);
-    file = root.openNextFile();
-  }
-
-}
-
 void setup() {
   Serial.begin(115200);
-  // initialize io0 as an output for LED flash.
-  pinMode(0, OUTPUT);
+  
+  pinMode(4, OUTPUT);// initialize io4 as an output for LED flash.
+  digitalWrite(4, LOW); // flash off/
+  
   init_wifi();
 
   tft.begin();
-
   tft.setRotation(3);  // 0 & 2 Portrait. 1 & 3 landscape
   tft.fillScreen(TFT_BLACK);
+  tft.setCursor(35,55);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.println(WiFi.localIP());
+  delay(5000);
 
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -172,15 +120,15 @@ void setup() {
     return;
   }
 
-
   sensor_t * s = esp_camera_sensor_get();
   s->set_framesize(s, FRAMESIZE_QQVGA);
+  s->set_vflip(s, 1);
 
   ws.onEvent(onEvent);
   webserver.addHandler(&ws);
 
   webserver.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
-    Serial.print("wtf here");
+    Serial.print("Sending interface...");
     AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_ov2640_html_gz, sizeof(index_ov2640_html_gz));
     response->addHeader("Content-Encoding", "gzip");
     request->send(response);
@@ -221,6 +169,67 @@ bool init_wifi()
   return true;
 }
 
+void onEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
+{
+  // String incoming = String((char *)data); No idea why.. gave extra characters in data for short names.
+  // so ....
+  for (size_t i = 0; i < len; i++) {
+    incoming += (char)(data[i]);
+  }
+  Serial.println(incoming);
+
+  if (incoming.substring(0, 7) == "delete:") {
+    String deletefile = incoming.substring(7);
+    incoming = "";
+    int fromUnderscore = deletefile.lastIndexOf('_') + 1;
+    int untilDot = deletefile.lastIndexOf('.');
+    String fileId = deletefile.substring(fromUnderscore, untilDot);
+    Serial.println(fileId);
+    Serial.println("image delete");
+    SPIFFS.remove("/selfie_t_" + fileId + ".jpg");
+    SPIFFS.remove("/selfie_f_" + fileId + ".jpg");
+    client->text("removed:" + deletefile); // file deleted. request browser update
+    
+  } else {
+    Serial.println("sending list");
+    client->text(filelist_spiffs());
+  }
+}
+
+String filelist_spiffs()
+{
+
+  filelist = "";
+  fs::File root = SPIFFS.open("/");
+
+  fs::File file = root.openNextFile();
+  while (file) {
+    String fileName = file.name();
+    // Serial.println(fileName);
+    filelist = filelist + fileName;
+    file = root.openNextFile();
+  }
+  Serial.println(filelist);
+  return filelist;
+}
+
+void latestFileSPIFFS()
+{
+  fs::File root = SPIFFS.open("/");
+
+  fs::File file = root.openNextFile();
+  while (file) {
+    String fileName = file.name();
+    Serial.println(fileName);
+    int fromUnderscore = fileName.lastIndexOf('_') + 1;
+    int untilDot = fileName.lastIndexOf('.');
+    String fileId = fileName.substring(fromUnderscore, untilDot);
+    Serial.println(fileId);
+    file_number = max(file_number, fileId.toInt()); // replace filenumber if fileId is higher
+    file = root.openNextFile();
+  }
+}
+
 bool face_detected()
 {
   fb = esp_camera_fb_get();
@@ -251,17 +260,14 @@ bool face_detected()
 
 void smile_for_the_camera()
 {
-  digitalWrite(0, HIGH); // flash on
-
   long timer_millis = millis();
   while (millis() - timer_millis < 500) {
     if (!face_detected()) { // if face disappears stop
       Serial.println("face not detected");
-      digitalWrite(0, LOW);
       return;
     }
   }
-
+  digitalWrite(4, HIGH); // flash on
   fex.drawJpgFile(SPIFFS, "/_count3.jpg", 0, 0);
   delay(400);
   fex.drawJpgFile(SPIFFS, "/_count2.jpg", 0, 0);
@@ -270,16 +276,17 @@ void smile_for_the_camera()
   delay(400);
 
   take_photo();
+        digitalWrite(4, LOW);
 }
 
 static esp_err_t take_photo()
 {
   latestFileSPIFFS(); // next file number
   file_number++;
-  Serial.println(file_number);  
+  Serial.println(file_number);
   Serial.println("Starting thumb capture: ");
   fb = esp_camera_fb_get();
-  fex.drawJpg((const uint8_t*)fb->buf, fb->len, 0, 0);
+  fex.drawJpg((const uint8_t*)fb->buf, fb->len, 0, 6);
   //save thumb
   char *thumb_filename = (char*)malloc(23 + sizeof(file_number));
   sprintf(thumb_filename, "/spiffs/selfie_t_%d.jpg", file_number);
@@ -326,16 +333,14 @@ static esp_err_t take_photo()
 
 void loop()
 {
-
   if (face_detected()) {
     smile_for_the_camera();
   }
   else
   {
     fb = esp_camera_fb_get();
-    fex.drawJpg((const uint8_t*)fb->buf, fb->len, 0, 0);
+    fex.drawJpg((const uint8_t*)fb->buf, fb->len, 0, 6);
     esp_camera_fb_return(fb);
     fb = NULL;
   }
-
 }
