@@ -13,8 +13,8 @@ TFT_eFEX  fex = TFT_eFEX(&tft);
 AsyncWebServer webserver(80);
 AsyncWebSocket ws("/ws");
 
-const char* ssid = "NSA HONEYPOT";
-const char* password = "only4andrew";
+const char* ssid = "NSA";
+const char* password = "orange";
 
 String filelist;
 camera_fb_t * fb = NULL;
