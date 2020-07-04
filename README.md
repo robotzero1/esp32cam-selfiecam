@@ -1,5 +1,5 @@
 # SelfieCam
-Blog Coming Soon...
+Full instructions on my blog: https://robotzero.one/esp32-cam-tft-selfie/
 
 ## Files above
 **data** - Contains graphics for countdown  
